@@ -33,7 +33,7 @@ import time
 import numpy as np
 import os
 
-from exptool.analysis import trapping
+#from exptool.analysis import trapping
 
 
 class Input():
@@ -723,12 +723,12 @@ def subdivide_particles(ParticleInstance,loR=0.,hiR=1.0,zcut=1.0,loT=-np.pi,hiT=
     R = (ParticleInstance.xpos*ParticleInstance.xpos + ParticleInstance.ypos*ParticleInstance.ypos)**0.5
     if transform==False:
         particle_roi = np.where( (R > loR) & (R < hiR) & (abs(ParticleInstance.zpos) < zcut))[0]
-    if transform==True:
+    #if transform==True:
         # compute the bar lag
-        ParticleInstanceTransformed = trapping.BarTransform(ParticleInstance,bar_angle=bar_angle)
-        BL = ( (np.arctan2(ParticleInstanceTransformed.ypos,ParticleInstanceTransformed.xpos) + np.pi/2.) % np.pi) - np.pi/2.
+        #ParticleInstanceTransformed = trapping.BarTransform(ParticleInstance,bar_angle=bar_angle)
+        #BL = ( (np.arctan2(ParticleInstanceTransformed.ypos,ParticleInstanceTransformed.xpos) + np.pi/2.) % np.pi) - np.pi/2.
         # look for particles in the wedge relative to bar angle
-        particle_roi = np.where( (R > loR) & (R < hiR) & (abs(ParticleInstance.zpos) < zcut) & (BL > loT) & (BL < hiT))[0]
+        #particle_roi = np.where( (R > loR) & (R < hiR) & (abs(ParticleInstance.zpos) < zcut) & (BL > loT) & (BL < hiT))[0]
     #
     # fill a new array with particles that meet this criteria
     #
