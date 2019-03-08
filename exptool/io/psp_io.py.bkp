@@ -293,10 +293,7 @@ class Input():
                 print('psp_io.psp_read_headers: Examining component {0:1d}'.format(present_comp))
                 
             # read the component header
-            try:
-                Input.component_header_read_yaml(self,present_comp)
-            except:
-                Input.component_header_read(self,present_comp)
+            Input.component_header_read(self,present_comp)
 
             self.f.seek(self.comp_data_end[present_comp])
 
@@ -364,10 +361,6 @@ class Input():
         
     def component_header_read(self,present_comp):
 
-	# guard for _yaml execution attempt.
-        self.f.seek(self.comp_pos[present_comp])
-
-
         self.comp_pos[present_comp] = self.f.tell()
         
         # if PSP changes, this will have to be altered, or I need to figure out a more future-looking version
@@ -397,49 +390,6 @@ class Input():
         self.comp_titles[present_comp] = comptitle.strip()
         self.comp_expansions[present_comp] = expansion.strip()
         self.comp_basis[present_comp] = basisinfo
-        self.comp_niatr[present_comp] = niatr
-        self.comp_ndatr[present_comp] = ndatr
-        self.comp_string[present_comp] = headStr
-        self.comp_nbodies[present_comp] = nbodies
-
-    def component_header_read_yaml(self,present_comp):
-
-        self.comp_pos[present_comp] = self.f.tell()
-        
-        # if PSP changes, this will have to be altered, or I need to figure out a more future-looking version
-        if self.floatl==4:
-            [cmagic,deadbit,nbodies,niatr,ndatr,infostringlen] = np.fromfile(self.f, dtype=np.uint32,count=6)
-        else: 
-            [nbodies,niatr,ndatr,infostringlen] = np.fromfile(self.f, dtype=np.uint32,count=4)
-
-        # information string from the header
-        #
-        # I believe np.bytes_ is more robust, would like to undertake a larger conversion.
-        #head = (np.fromfile(self.f, dtype='a'+str(infostringlen),count=1))
-        head = (np.fromfile(self.f, dtype=np.dtype((np.bytes_, infostringlen)),count=1))#
-
-        # here are two options for Python3 compatibility. Only .decode() is Python2 compatible, so save for now.
-        headStr = (head[0].decode())
-        #headStr = str( head[0])#, encoding='utf8' )
-
-        head_sep = head[0].split('\n')
-
-        P = {}
-
-        for param in head_sep:
-	    if ':' in param:
-	            P[param.split(':')[0].strip()] = param.split(':')[1].strip()
-
-        self.comp_pos_data[present_comp] = self.f.tell()            # save where the data actually begins
-
-        # 8 is the number of fields (m,x,y,z,vx,vy,vz,p)
-        comp_length = nbodies*(self.floatl*8 + 4*niatr + self.floatl*ndatr)
-        self.comp_data_end[present_comp] = self.f.tell() + comp_length                         # where does the data from this component end?
-        
-        self.comp_titles[present_comp] = P['name']
-        self.comp_expansions[present_comp] = P['id']
-        self.comp_basis[present_comp] = P['name'] # <- this could be
-                                        # expanded easily
         self.comp_niatr[present_comp] = niatr
         self.comp_ndatr[present_comp] = ndatr
         self.comp_string[present_comp] = headStr
@@ -915,11 +865,7 @@ def map_simulation_files(outfile,simulation_directory,simulation_name,verbose=1)
                 current_time = t
 
                 if verbose > 0:
-                    try:
-                        print('Current time: {0:4.3f}'.format(current_time),end='\r', flush=True)
-                    except:
-                        print('Current time: {0:4.3f}'.format(current_time),end='\r')
-                        
+                    print('Current time: {0:4.3f}'.format(current_time),end='\r', flush=True)
                 
         #
         f.close()
@@ -979,4 +925,3 @@ AA.flush()
 
 '''
         
-

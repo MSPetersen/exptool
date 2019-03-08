@@ -94,30 +94,30 @@ static PyObject *accumulate_d_xi_to_r(PyObject *self, PyObject *args)
 static PyObject *accumulate_z_to_y(PyObject *self, PyObject *args)
 {
     double z;
-    int cmap;
+    double hscale;
     PyObject * ret;
 
-    if (!PyArg_ParseTuple(args, "di", &z, &cmap))
+    if (!PyArg_ParseTuple(args, "di", &z, &hscale))
 	return NULL;
 
-	double result = z_to_y(z,cmap);
+    double result = z_to_y(z,hscale);
 
-	ret = PyFloat_FromDouble(result);
-	return ret;
+    ret = PyFloat_FromDouble(result);
+    return ret;
 }
 
 static PyObject *accumulate_y_to_z(PyObject *self, PyObject *args)
 {
     double y;
-    int cmap;
+    double hscale;
     PyObject * ret;
 
-    if (!PyArg_ParseTuple(args, "di", &y, &cmap))
+    if (!PyArg_ParseTuple(args, "di", &y, &hscale))
 	return NULL;
 
-	double result = y_to_z(y,cmap);
+    double result = y_to_z(y,hscale);
 
-	ret = PyFloat_FromDouble(result);
-	return ret;
+    ret = PyFloat_FromDouble(result);
+    return ret;
 }
 

@@ -87,10 +87,15 @@ from exptool.utils import utils
 from exptool.io import psp_io
 
 # hold off for now...
-try:
-    from exptool.basis._accumulate_c import r_to_xi,xi_to_r,d_xi_to_r
-except:
-    from exptool.basis.compatibility import r_to_xi,xi_to_r,d_xi_to_r,z_to_y,y_to_z
+#try:
+#    from exptool.basis._accumulate_c import r_to_xi,xi_to_r,d_xi_to_r
+#except:
+from exptool.basis.compatibility import r_to_xi,xi_to_r,d_xi_to_r,z_to_y,y_to_z
+
+
+
+
+
 
 #############################################################################################
 #
@@ -1236,7 +1241,7 @@ def accumulate_star(a_b):
     return accumulate(*a_b)
 
 
-def multi_accumulate(holding,nprocs,potC,potS,mmax,norder,XMIN,dX,YMIN,dY,numx,numy,ascale,hscale,cmap,verbose=0,no_odd=False,VAR=False):
+def multi_accumulate(holding,nprocs,potC,potS,mmax,norder,XMIN,dX,YMIN,dY,numx,numy,ascale,hscale,cmap,verbose=0,no_odd=0,VAR=0):
     pool = multiprocessing.Pool(nprocs)
     a_args = [holding[i] for i in range(0,nprocs)]
     second_arg = potC
