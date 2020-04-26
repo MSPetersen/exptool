@@ -1,750 +1,272 @@
-####################################
-#
-# Python PSP reader
-#
-#    MSP 10.25.14
-#    Added to exptool 12.3.15
-#    Constructed to theoretically handle niatr/ndatr 3.7.16
-#    niatr/ndatr verified 5.26.16
-#
-#    08-27-2016 added compatibility for dictionary support, the long-term goal of the reader once I commit to re-engineering everything.
-#
-#    12-08-2016 cleaned up subdividing inputs. needs much more cleaning, particularly eliminating many 'self' items from the Input class.
-#                  should also set up dictionary dump by default, could just engineer in at the end?
+"""
+Python PSP (Phase-Space Protocol) reader
+
+-25 Oct 2014 in original form, Michael S. Petersen, michael.petersen@roe.ac.uk
+-03 Dec 2015 committed to exptool
+-07 Mar 2016 constructed to theoretically handle niatr/ndatr
+-27 Aug 2016 added compatibility for dictionary support, the long-term goal of the reader once I commit to re-engineering everything.
+-08 Dec 2016 cleaned up subdividing inputs. needs much more cleaning, particularly eliminating many 'self' items from the Input class. Should also set up dictionary dump by default, could just engineer in at the end?
+-11 Mar 2019 set up to read yaml-derived input files. A method to diagnose problems would be amazing--currently written elsewhere.
+-14 Aug 2019 handle indexing=True from exp component inputs
+-17 Dec 2019 major revision to simplify
+
+PSP is a file format used by the EXP basis function expansion N-body code
+written by Martin Weinberg.
 
 
-'''
-.______     _______..______       __    ______   
-|   _  \   /       ||   _  \     |  |  /  __  \  
-|  |_)  | |   (----`|  |_)  |    |  | |  |  |  | 
-|   ___/   \   \    |   ___/     |  | |  |  |  | 
-|  |   .----)   |   |  |         |  | |  `--'  | 
-| _|   |_______/    | _|    _____|__|  \______/  
-                           |______|
-psp_io
-      input and output of Martin Weinberg's PSP files
+TODO
+-check translator for old PSP files
+-add protection for missing yaml
+-add handling for split PSP files
+-add handling for multiple components simultaneously
+-add _make_dataframe
 
+"""
 
-
-
-'''
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-
-import time
 import numpy as np
-import os
+
+# requires yaml support: likely needs to be installed.
+import yaml
 
 
+class Input:
+    """Python reader for Phase-Space Protocol (PSP) files used by EXP.
 
+    inputs
+    ----------
+    filename : str
+        The PSP filename to load.
 
-#from exptool.analysis import trapping
+    """
 
-
-class Input():
-    '''
-    #!
-    #! input class to read PSP files
-    #!
-
-    #! INPUT fields:
-    #!    infile                                      :    string               :    filename to be read
-    #!  [optional inputs]
-    #!    comp                                        :    string               :    selected component to be read  (default: None)
-    #!    nout                                        :    integer              :    how many bodies to return      (default: all)
-    #!    verbose                                     :    integer              :    reporting mode, flags below    (default: 0)
-    #!    orbit_list                                  :    string               :    filename of orbitlist          (ascii, one integer per line)
-    #!    infile_list                                 :    string               :    filename of infilelist         (ascii, one filename per line)
-    #!    validate                                    :    boolean              :    validate file and exit         (defalt: False)
-    
-    #! OUTPUT fields:
-    #!    mass,xpos,ypos,zpos,xvel,yvel,zvel,pote     :    float/double         :    particle arrays
-    #!       ---OR if multiple timesteps---
-    #!    MASS,XPOS,YPOS,ZPOS,XVEL,YVEL,ZVEL,POTE,TIME:    float/double         :    particle arrays [particle, time]
-
-    #! VERBOSITY FLAGS:
-    #!  0: Silent
-    #!  1: Report Component data
-    #!  2: Report Timing data     
-    #!  4: Report Debug data      (in progress)
-
-    #! WISHLIST:
-    #!     
-    #!     return N components, if desired
-    #!     continued optimization
-    #!     add ability to pull single orbit timeseries from specified files
-    #!    
-
-    #! EXAMPLE USAGE
-    #! 
-    #! import psp_io
-    #! O = psp_io.Input(infile)
-    #! 
-    #!
-
-    # member definitions:
-    #
-    # __init__
-    # psp_full_read
-    # master_header_read
-    # component_header_read
-    # break_info_string
-    # component_read
-    # orbit_map
-    # orbit_resolve
-    '''
-
-    def __init__(self, infile, comp=None, nout=None, verbose=0, orbit_list=None, infile_list=None, validate=True):
-
-        #
-        # set input parameters
-        # 
+    def __init__(self, filename,comp=None, legacy=True,nbodies=-1,verbose=0,nout=-1):
+        """
+        inputs
+        ------------
+        comp    : str
+            name of the component to return.
+        legacy  : boolean
+            if True, adds support for other exptool methods. unneeded if building from scratch.
+        nbodies : integer
+            reduce the number of bodies that are returned.
+        verbose : integer
+            levels of verbosity.
+        nout    : integer
+            deprecated compatibility parameter. use nbodies instead.
         
-        self.infile = infile
-        self.comp = comp
-        self.nout = nout
-        self.verbose = verbose
-
-        # is there an orbit list?
-        self.orbit_list = orbit_list
-        self.OLIST = None
-
-        # is there an infile list?
-        self.infile_list = infile_list
-        self.ILIST = None
-
-        # override validate flag if component
-        if self.comp != None: validate=False
-
-        #
-        # do the components have niatr/ndatr? to be deprecated once I figure out how to write them properly
-            
-        #
-        # set mode based on inputs
-        #
-        # 0: failure mode
-        # 1: read in orbits from single file 
-        # 2: read in orbits from multiple files
-        # 3: check validity of PSP file
+        """
 
         
+        self.filename = filename
+        self.nbodies = nbodies
+        
+        # deprecated.
+        self.infile = filename
+        
+        # deprecated.
+        self.nbodies = int(np.nanmax([nbodies,nout]))
+        
+        # initial check for file validity
         try:
-            self.f = open(infile,'rb')
+            f = open(self.filename, 'rb')
+            f.close()
+        except Exception:
+            raise IOError('Failed to load header from file "{}" - are you sure '
+                          'this is a PSP file?'.format(filename))
 
-            #
-            # default to single file reading
-            #
-            mode = 1
+        # test for split PSP files
+        # TODO
 
-            #
-            # is this an orbit trace?
-            #
-            if (self.infile_list): 
-                mode = 2
-
-                #
-                # check specific cases
-                #
-                if not (self.orbit_list):
-                    mode = 0
-                    # mode where orbit_list is not defined, but infile is. Read a single orbit
-                    #self.singular_orbit = raw_input("Orbit to probe? ")
-
-                if not (self.comp):
-                    mode = 0
-                    print('psp_io.Input: Component must be defined to proceed with orbit resolution.')
-
-            if validate==True:
-
-                # set to a new mode
-                mode = 3
-
-                Input.psp_read_headers(self)
+        # do an initial read of the header
+        self.header = self._read_master_header()
         
-                if self.verbose>=1:
-                    print('psp_io.Input: The time is {0:4.3f}, with {1:1d} components and {2:1d} total bodies.'.format(self.time,self.ncomp,self.ntot) )
+        _comps = list(self.header.keys())
+ 
 
-                    if self.verbose >= 2:
-
-                        comp_num = 0
-                        while comp_num < self.ncomp:
-                            
-                            print('psp_io.Input: Component {0:20s}, using {0:20s} force calculation.'.format(self.comp_titles[comp_num],self.comp_expansions[comp_num]))
-
-                            comp_num += 1
-            
-            
+        # if a component is defined, retrieve data
+        if comp != None:
+            if comp not in _comps:
+                raise IOError('The specified component does not exist.')
                 
-                    
-        except:
-            print('psp_io.Input: The master infile is not defined (or does not exist). Master infile required to proceed.')
-            mode = 0
-
-
-
-        
-
-        
-        #
-        # single-file mode
-        #
-        if mode == 1:
-
-            #
-            # drop into full reader routine
-            #
-            Input.psp_full_read(self)
-
-            self.f.close()
-
-            
-        #
-        # multi-time mode
-        #
-        if mode == 2:
-
-            if self.verbose >= 1:
-                print('psp_io.Input: Orbit Resolution Initialized...')
-      
-            #
-            # drop into orbit retrieval mode
-            #
-            Input.orbit_resolve(self)
-
-
-        if mode == 0:
-            print('psp_io.Input: Exiting with error.')
-            # would be great to put some error code handling in here
-
-            
-    def psp_full_read(self):
-        master_time = time.time()
-
-        #
-        # do cursory header read
-        #
-        Input.psp_read_headers(self)
-        
-        if self.verbose>=1:
-            print('psp_io.Input: The time is {0:4.3f}, with {1:1d} components and {2:1d} total bodies.'.format(self.time,self.ncomp,self.ntot) )
-
-        #
-        # select component to output
-        #
-        Input.select_component(self)
-
-        #
-        # if the component is found proceed.
-        #
-        if (self.which_comp is not None): 
-
-            #
-            # how many bodies to return? (overridden if orbit_list)
-            #
-            if (self.nout):
-                self.nbodies = self.nout
             else:
-                self.nbodies = self.comp_nbodies[self.which_comp]
-                
-
-            #
-            # only return a specified list of orbits?
-            #          
-            if (self.orbit_list):
-                Input.orbit_map(self)
-                self.nbodies = len(self.OLIST)
-
-
-            #
-            # if returning a single dump, drop into the full component_read loop
-            #
-            if self.verbose >= 1:
-                Input.break_info_string(self)
-
-            #
-            # 
-            #
-            Input.component_read(self)
-
+                self.data = self._read_component_data(self.header[comp])
             
-            if self.verbose >= 2:
-                print('psp_io.psp_full_read: PSP file read in {0:3.2f} seconds'.format(time.time()-master_time))
-
-
-
+        # if no header is defined, you will get just the master header
         
-
-    def psp_read_headers(self):
-
-        #
-        # helper class to read the basic data from multiple headers
-        #
-        
-        # read the master header        
-        Input.master_header_read(self)
-
-        #
-        # inspect component headers
-        #
-        present_comp = 0
-        while present_comp < self.ncomp:
+        if (legacy) & (comp!=None):
+            self.header = self.header[comp]
+            self.comp = comp
+            self._make_backward_compatible()
+        elif legacy:
+            raise IOError('A component must be specified for legacy usage.')
             
-            if self.verbose >= 4:
-                print('psp_io.psp_read_headers: Examining component {0:1d}'.format(present_comp))
-                
-            # read the component header
-            try:
-                Input.component_header_read_yaml(self,present_comp)
-            except:
-                Input.component_header_read(self,present_comp)
 
-            self.f.seek(self.comp_data_end[present_comp])
-
-            present_comp += 1
-
-
-    def select_component(self):
-
-        #
-        # decide which component, if any, to retrieve
-        #
+    def _read_component_header(self, f, comp_idx):
+        """read in the header for a single component"""
         
-        if (self.comp):
-            try:
-                self.which_comp = np.where(np.array(self.comp_titles) == self.comp)[0][0]
-            except:
-                print('psp_io.select_component: No matching component!')
-                self.which_comp = None
+        _ = f.tell()  # byte position of this component
+
+        # TODO: if PSP changes, this will have to be altered
+        if self._float_len == 4:
+            _1,_2, nbodies, nint_attr, nfloat_attr, infostringlen = np.fromfile(f, dtype=np.uint32, count=6)
+            
         else:
-            self.which_comp = None
-
-            if self.verbose > 0:
-                print('psp_io.select_component: Proceeding without selecting component.')
-
-
-
-
-    def master_header_read(self):
-        
-        #
-        # read the master header
-        #
-        #    Allocate arrays of necessary component 
-        #
-        self.f.seek(16) # find magic number
-        [cmagic] = np.fromfile(self.f, dtype=np.uint32,count=1)
-
-        # check if it is a float
-        # reasonably certain the endianness doesn't affect us here, but verify?
-        if cmagic == 2915019716:
-            self.floatl = 4
-            self.dyt = 'f'
-        else:
-            self.floatl = 8
-            self.dyt = 'd'
-            
-        # reset to beginning and proceed
-        self.f.seek(0)
-        [self.time] = np.fromfile(self.f, dtype='<f8',count=1)
-        [self.ntot,self.ncomp] = np.fromfile(self.f, dtype=np.uint32,count=2)
-
-        self.comp_pos = np.zeros(self.ncomp,dtype=np.uint64)                  # byte position of COMPONENT HEADER for returning easily
-        self.comp_pos_data = np.zeros(self.ncomp,dtype=np.uint64)             # byte position of COMPONENT DATA for returning easily
-        self.comp_data_end = np.zeros(self.ncomp,dtype=np.uint64)             # byte position of COMPONENT DATA END for returning easily
-
-        # generic PSP items worth making accessible
-        self.comp_titles = ['' for i in range(0,self.ncomp)]
-        self.comp_expansions = ['' for i in range(0,self.ncomp)]
-        self.comp_basis = ['' for i in range(0,self.ncomp)]
-        self.comp_niatr = np.zeros(self.ncomp,dtype=np.uint64)                # each component's number of integer attributes
-        self.comp_ndatr = np.zeros(self.ncomp,dtype=np.uint64)                # each component's number of double attributes
-        self.comp_string = ['' for i in range(0,self.ncomp)]
-        self.comp_nbodies = np.zeros(self.ncomp,dtype=np.uint64)              # each component's number of bodies
-
-        
-    def component_header_read(self,present_comp):
-
-	# guard for _yaml execution attempt.
-        self.f.seek(self.comp_pos[present_comp])
-
-
-        self.comp_pos[present_comp] = self.f.tell()
-        
-        # if PSP changes, this will have to be altered, or I need to figure out a more future-looking version
-        if self.floatl==4:
-            [cmagic,deadbit,nbodies,niatr,ndatr,infostringlen] = np.fromfile(self.f, dtype=np.uint32,count=6)
-        else: 
-            [nbodies,niatr,ndatr,infostringlen] = np.fromfile(self.f, dtype=np.uint32,count=4)
+            nbodies, nint_attr, nfloat_attr, infostringlen = np.fromfile(f, dtype=np.uint32, count=4)
 
         # information string from the header
-        #
-        # I believe np.bytes_ is more robust, would like to undertake a larger conversion.
-        #head = (np.fromfile(self.f, dtype='a'+str(infostringlen),count=1))
-        head = (np.fromfile(self.f, dtype=np.dtype((np.bytes_, infostringlen)),count=1))#
-
-        # here are two options for Python3 compatibility. Only .decode() is Python2 compatible, so save for now.
-        headStr = (head[0].decode())
-        #headStr = str( head[0])#, encoding='utf8' )
+        head = np.fromfile(f, dtype=np.dtype((np.bytes_, infostringlen)),
+                           count=1)
         
-        [comptitle,expansion,EJinfo,basisinfo] = [q for q in headStr.split(':')]
+        # need the backward compatibility here.
+        try:
+            head_normal = head[0].decode()
+            head_dict = yaml.safe_load(head_normal)
+        except:
+            head_sep = head[0].split('\n')
+            head_dict = dict()
+            for param in head_sep:
+                head_dict[param.split(':')[0].strip()] = param.split(':')[1].strip()
 
-        self.comp_pos_data[present_comp] = self.f.tell()            # save where the data actually begins
+        comp_data_pos = f.tell()  # byte position where component data begins
 
-        # 8 is the number of fields (m,x,y,z,vx,vy,vz,p)
-        comp_length = nbodies*(self.floatl*8 + 4*niatr + self.floatl*ndatr)
-        self.comp_data_end[present_comp] = self.f.tell() + comp_length                         # where does the data from this component end?
+        # the default fields are (m, x, y, z, vx, vy, vz, p)
+        nfields = 8
+        comp_length = nbodies * (8 * int(head_dict['parameters']['indexing']) +
+                                 self._float_len * nfields +
+                                 4 * nint_attr +
+                                 self._float_len * nfloat_attr)
+        comp_data_end = f.tell() + comp_length  # byte pos. of comp. data end
+
+        data = dict()
+        data['index'] = comp_idx
+        for k in head_dict:
+            data[k] = head_dict[k]
+        data['nint_attr'] = nint_attr
+        data['nfloat_attr'] = nfloat_attr
+        data['nbodies'] = nbodies
+        data['data_start'] = comp_data_pos
+        data['data_end'] = comp_data_end
+        f.seek(comp_data_end)
+
+        return data
+
+    def _read_master_header(self):
+        """read the master header of the PSP file"""
+
+        master_header = dict()
+        nbodies = 0
+
+        with open(self.filename, 'rb') as f:
+
+            f.seek(16)  # find magic number
+            cmagic, = np.fromfile(f, dtype=np.uint32, count=1)
+
+            # check if it is float vs. double
+            if cmagic == 2915019716:
+                self._float_len = 4
+                self._float_str = 'f'
+            else:
+                self._float_len = 8
+                self._float_str = 'd'
+
+            # reset to beginning and read current time
+            f.seek(0)
+            self.time, = np.fromfile(f, dtype='<f8', count=1)
+            self._nbodies_tot, self._ncomp = np.fromfile(f, dtype=np.uint32,
+                                                         count=2)
+
+            for i in range(self._ncomp):
+                data = self._read_component_header(f, i)
+                master_header[data.pop('name')] = data
+                nbodies += data['nbodies']
+
+        master_header['nbodies'] = nbodies
+
+        return master_header
+
+    def _read_component_data(self, comp_header):
+        """read in all data for component"""
+
+        dtype_str = []
+        colnames = []
+        if comp_header['parameters']['indexing']:
+            # if indexing is on, the 0th column is Long
+            dtype_str = dtype_str + ['l']
+            colnames = colnames + ['index']
+
+        dtype_str = dtype_str + [self._float_str] * 8
+        colnames = colnames + ['m', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'potE']
+
+        dtype_str = dtype_str + ['i'] * comp_header['nint_attr']
+        colnames = colnames + ['i_attr{}'.format(i)
+                               for i in range(comp_header['nint_attr'])]
+
+        dtype_str = dtype_str + [self._float_str] * comp_header['nfloat_attr']
+        colnames = colnames + ['f_attr{}'.format(i)
+                               for i in range(comp_header['nfloat_attr'])]
+
+        dtype = np.dtype(','.join(dtype_str))
+
+        out = np.memmap(self.filename,
+                        dtype=dtype,
+                        shape=(1, comp_header['nbodies']),
+                        offset=int(comp_header['data_start']),
+                        order='F', mode='r')
+
+        tbl = {}
+        for i, name in enumerate(colnames):
+            if self.nbodies > 0:
+                tbl[name] = np.array(out['f{}'.format(i)][0], copy=True)[0:self.nbodies]
+            else:
+                tbl[name] = np.array(out['f{}'.format(i)][0], copy=True)
+
+        del out  # close the memmap instance
+
+        return tbl
+
+
+    def _make_backward_compatible(self):
+        """routine to make the dictionary style from above a drop-in replacement for old psp_io"""
         
-        self.comp_titles[present_comp] = comptitle.strip()
-        self.comp_expansions[present_comp] = expansion.strip()
-        self.comp_basis[present_comp] = basisinfo
-        self.comp_niatr[present_comp] = niatr
-        self.comp_ndatr[present_comp] = ndatr
-        self.comp_string[present_comp] = headStr
-        self.comp_nbodies[present_comp] = nbodies
-
-    def component_header_read_yaml(self,present_comp):
-
-        self.comp_pos[present_comp] = self.f.tell()
+        if self.nbodies > 0:
+            self.mass = self.data['m'][0:self.nbodies]
+            self.xpos = self.data['x'][0:self.nbodies]
+            self.ypos = self.data['y'][0:self.nbodies]
+            self.zpos = self.data['z'][0:self.nbodies]
+            self.xvel = self.data['vx'][0:self.nbodies]
+            self.yvel = self.data['vy'][0:self.nbodies]
+            self.zvel = self.data['vz'][0:self.nbodies]
+            self.pote = self.data['potE'][0:self.nbodies]
         
-        # if PSP changes, this will have to be altered, or I need to figure out a more future-looking version
-        if self.floatl==4:
-            [cmagic,deadbit,nbodies,niatr,ndatr,infostringlen] = np.fromfile(self.f, dtype=np.uint32,count=6)
-        else: 
-            [nbodies,niatr,ndatr,infostringlen] = np.fromfile(self.f, dtype=np.uint32,count=4)
-
-        # information string from the header
-        #
-        # I believe np.bytes_ is more robust, would like to undertake a larger conversion.
-        #head = (np.fromfile(self.f, dtype='a'+str(infostringlen),count=1))
-        head = (np.fromfile(self.f, dtype=np.dtype((np.bytes_, infostringlen)),count=1))#
-
-        # here are two options for Python3 compatibility. Only .decode() is Python2 compatible, so save for now.
-        headStr = (head[0].decode())
-        #headStr = str( head[0])#, encoding='utf8' )
-
-        head_sep = head[0].split('\n')
-
-        P = {}
-
-        for param in head_sep:
-	    if ':' in param:
-	            P[param.split(':')[0].strip()] = param.split(':')[1].strip()
-
-        self.comp_pos_data[present_comp] = self.f.tell()            # save where the data actually begins
-
-        # 8 is the number of fields (m,x,y,z,vx,vy,vz,p)
-        comp_length = nbodies*(self.floatl*8 + 4*niatr + self.floatl*ndatr)
-        self.comp_data_end[present_comp] = self.f.tell() + comp_length                         # where does the data from this component end?
-        
-        self.comp_titles[present_comp] = P['name']
-        self.comp_expansions[present_comp] = P['id']
-        self.comp_basis[present_comp] = P['name'] # <- this could be
-                                        # expanded easily
-        self.comp_niatr[present_comp] = niatr
-        self.comp_ndatr[present_comp] = ndatr
-        self.comp_string[present_comp] = headStr
-        self.comp_nbodies[present_comp] = nbodies
-
-
-    def create_particle_buffer(self):
-        #
-        # routine to return the unique data array based on the particle class
-        #
-
-        if self.floatl==4:
-            fstring = 'f,f,f,f,f,f,f,f'
-            for i in range(0,self.comp_niatr[self.which_comp]): fstring += ',i'
-            for i in range(0,self.comp_ndatr[self.which_comp]): fstring += ',f'
-
         else:
-            fstring = 'd,d,d,d,d,d,d,d'
-            for i in range(0,self.comp_niatr[self.which_comp]): fstring += ',i'
-            for i in range(0,self.comp_ndatr[self.which_comp]): fstring += ',d'
-
+            self.mass = self.data['m']
+            self.xpos = self.data['x']
+            self.ypos = self.data['y']
+            self.zpos = self.data['z']
+            self.xvel = self.data['vx']
+            self.yvel = self.data['vy']
+            self.zvel = self.data['vz']
+            self.pote = self.data['potE']
             
-        self.readtype = np.dtype(fstring)
-
-
-    def component_read(self):
-
-        #
-        # define particle data type
-        #      which defines self.readtype
-        #
-
-        self.create_particle_buffer()
-
-
-        #
-        # gather data field
-        #
-        if not (self.orbit_list):
-
-            out = np.memmap(self.infile,dtype=self.readtype,shape=(1,int(self.nbodies)),offset=int(self.comp_pos_data[self.which_comp]),order='F',mode='r')
-
-
-            #
-            # populate known attributes
-            #
-            self.mass = out['f0'][0]
-            self.xpos = out['f1'][0]
-            self.ypos = out['f2'][0]
-            self.zpos = out['f3'][0]
-            self.xvel = out['f4'][0]
-            self.yvel = out['f5'][0]
-            self.zvel = out['f6'][0]
-            self.pote = out['f7'][0]
-
-            
-            #
-            # treat niatr, ndatr
-            #
-            for int_attr in range(0,self.comp_niatr[self.which_comp]): 
-
-                setattr(self, 'i'+str(int_attr), out['f'+str(8+int_attr)][0])
-
-
-            for dbl_attr in range(0,self.comp_ndatr[self.which_comp]): 
-
-                setattr(self, 'd'+str(dbl_attr), out['f'+str(int(8 + self.comp_niatr[self.which_comp] + dbl_attr))][0])
-
-
-        #        
-        # mode in which only specific orbits are returned
-        #
-        if (self.orbit_list):
-
-            #
-            # read in all orbits, then obtain specific orbits
-            #     (okay because low overhead)
-            #
-            out = np.memmap(self.infile,dtype=self.readtype,shape=(1,int(self.comp_nbodies[self.which_comp])),offset=int(self.comp_pos_data[self.which_comp]),order='F',mode='r')
-
-
-            self.mass = out['f0'][0][self.OLIST]
-            self.xpos = out['f1'][0][self.OLIST]
-            self.ypos = out['f2'][0][self.OLIST]
-            self.zpos = out['f3'][0][self.OLIST]
-            self.xvel = out['f4'][0][self.OLIST]
-            self.yvel = out['f5'][0][self.OLIST]
-            self.zvel = out['f6'][0][self.OLIST]
-            self.pote = out['f7'][0][self.OLIST]
-
-            #
-            # treat niatr, ndatr
-            #
-            for int_attr in range(0,self.comp_niatr[self.which_comp]): # + self.comp_ndatr[self.which_comp]
-
-                setattr(self, 'i'+str(int_attr), out['f'+str(8+int_attr)][0][self.OLIST])
-
-
-            for dbl_attr in range(0,self.comp_ndatr[self.which_comp]): # + self.comp_ndatr[self.which_comp]
-
-                setattr(self, 'd'+str(dbl_attr), out['f'+str(int(8 + self.comp_niatr[self.which_comp] + dbl_attr))][0][self.OLIST])
-
-
-
-    def break_info_string(self):
-
-        #
-        # break the info string to be human-readable
-        #
+                
+        # may also want to delete self.data in this case to save memory
+        del self.data
         
-        head = self.comp_string[self.which_comp]
-        [comptitle,expansion,EJinfo,basisinfo] = [q for q in head.split(':')]
-
-        print('component: ',self.comp_titles[self.which_comp])
-        print('bodies: ',self.comp_nbodies[self.which_comp])
-        print('expansion: ',expansion.strip())
-        print('ej info: ',EJinfo)
-        print('basis info: ',basisinfo)
-
-        #
-        # could develop a more user-friendly output for these
-        #
-
-    def orbit_map(self):
-
-        #
-        # read in the orbit list and convert to an array
-        #
+    def _make_dataframe(self):
+        """routine to make the dictionary style from above pandas dataframe"""
         
-        g = open(self.orbit_list)
-        olist = []
-        for line in g:
-            d = [q for q in line.split()]
-            # no safeguards here yet
-            if len(d)==1: olist.append(int(d[0]))
-
-        g.close()
-
-        self.OLIST = np.array(olist)
-
-        #
-        # override number of bodies to return to match orbit list
-        #
-        self.nbodies = len(self.OLIST)
-
-        if self.verbose >= 1:
-            print('psp_io.orbit_map: Orbit map accepted with {0:1d} bodies.'.format(self.nbodies))
-
-    def timestep_map(self):
-
-        #
-        # read in file list and convert to an array
-        #
-
-        g = open(self.infile_list)
-        ilist = []
-        for line in g:
-            d = [q for q in line.split()]
-            if len(d)==1: ilist.append(d[0])
-
-        g.close()
-
-        self.ILIST = np.array(ilist)
-
-        if self.verbose >= 1:
-            print('psp_io.timestep_map: Filename map accepted with {0:1d} files (timesteps).'.format(len(self.ILIST)))
-
+        pass
         
-    def orbit_resolve(self):
-
-        #
-        # wrapper to cycle through different files (timesteps) and return orbits
-        #
-        if self.verbose >= 2:
-            res_time_initial = time.time()
-
-        #
-        # read a first array to seek_list
-        #
-        Input.psp_read_headers(self)
-        self.f.close()
-
-        if self.verbose>=1:
-            print('psp_io.Input: The time is {0:4.3f}, with {1:1d} components and {2:1d} total bodies.'.format(self.time,self.ncomp,self.ntot) )
-
-        #
-        # select component to output
-        #
-        Input.select_component(self)
-
-        #
-        # select orbits and files to map
-        #
-        Input.orbit_map(self)
-        Input.timestep_map(self)
         
-        #
-        # allocate particle arrays
-        #
-        self.ntimesteps = len(self.ILIST)
-        
-        self.TIME = np.zeros([self.ntimesteps])
-        self.XPOS = np.zeros([self.nbodies,self.ntimesteps])
-        self.YPOS = np.zeros([self.nbodies,self.ntimesteps])
-        self.ZPOS = np.zeros([self.nbodies,self.ntimesteps])
-        self.XVEL = np.zeros([self.nbodies,self.ntimesteps])
-        self.YVEL = np.zeros([self.nbodies,self.ntimesteps])
-        self.ZVEL = np.zeros([self.nbodies,self.ntimesteps])
-        self.POTE = np.zeros([self.nbodies,self.ntimesteps])
-
-        #
-        # cycle through files
-        #
-        for i,file in enumerate(self.ILIST):
-
-            #
-            # open the next file
-            #
-            self.f = open(file,'rb')
-
-            [ttime] = np.fromfile(self.f, dtype='<f8',count=1)
-
-            if self.verbose>=4:
-                print('Time: {0:4.3f}'.format(ttime))
-
-            #
-            # read and stuff arrays
-            #
-            self.infile = file
-            Input.component_read(self)
-
-            # set mass once, which is unchanging (for now!)
-            if i==0: self.MASS = self.mass
-
-            
-            self.TIME[i] = time
-            #self.MASS[:,i] = self.mass
-            self.XPOS[:,i] = self.xpos
-            self.YPOS[:,i] = self.ypos
-            self.ZPOS[:,i] = self.zpos
-            self.XVEL[:,i] = self.xvel
-            self.YVEL[:,i] = self.yvel
-            self.ZVEL[:,i] = self.zvel
-            self.POTE[:,i] = self.pote
-
-            #
-            # close file for cleanliness
-            #
-            self.f.close()
-
-            #
-            # delete the individual instances
-            #
-            del self.mass
-            del self.xpos
-            del self.ypos
-            del self.zpos
-            del self.xvel
-            del self.yvel
-            del self.zvel
-            del self.pote
-
-        if self.verbose >= 2:
-                    print('psp_io.orbit_resolve: Orbit(s) resolved in {0:3.2f} seconds'.format(time.time()-res_time_initial))
-
-
-
-
-class PSPDump():
-    '''
-
-    class to wrap the Input class in order to allow for easier manipulation
-
-    '''
-
-    def __init__(self, infile, comp=None, nout=None, verbose=0, orbit_list=None, infile_list=None, validate=False):
-
-
-        DUMP = Input(infile,comp=comp,nout=nout,verbose=verbose)
-
-        self.xpos = DUMP.xpos
-        self.ypos = DUMP.ypos
-        self.zpos = DUMP.zpos
-        self.xvel = DUMP.xvel
-        self.yvel = DUMP.yvel
-        self.zvel = DUMP.zvel
-        self.pote = DUMP.pote
-
-    def add_quantities(self):
-
-        self.rtwo = (self.xpos*self.xpos + self.ypos*self.ypos)**0.5
-        self.rthree = (self.xpos*self.xpos + self.ypos*self.ypos + self.zpos*self.zpos)**0.5
-        self.v2 = (self.xvel*self.xvel + self.yvel*self.yvel + self.zvel*self.zvel)
-        self.E = self.v2 + self.pote
-
         
 
 #
-# Below here are helper functions to subdivide and combine particles.
+# Below here are helper functions to subdivide and combine particles for parallel processes
 #
 
 class particle_holder(object):
-    #
-    # all the quantities you could ever want to fill in your own dump.
-    #
+    '''all the quantities you could ever want to fill in your own PSP-style output.
+    '''
     infile = None
     comp = None
     nbodies = None
@@ -761,56 +283,10 @@ class particle_holder(object):
 
 
 
-def convert_to_dict(ParticleInstance):
-    ParticleInstanceDict = {}
-    ParticleInstanceDict['xpos'] = ParticleInstance.xpos
-    ParticleInstanceDict['ypos'] = ParticleInstance.ypos
-    ParticleInstanceDict['zpos'] = ParticleInstance.zpos
-    ParticleInstanceDict['xvel'] = ParticleInstance.xvel
-    ParticleInstanceDict['yvel'] = ParticleInstance.yvel
-    ParticleInstanceDict['zvel'] = ParticleInstance.zvel
-    ParticleInstanceDict['pote'] = ParticleInstance.pote
-    ParticleInstanceDict['mass'] = ParticleInstance.mass
-    return convert_to_dict
-
-    
-
-#
-# this really shouldn't even be an option anymore.
-def subdivide_particles(ParticleInstance,loR=0.,hiR=1.0,zcut=1.0,loT=-np.pi,hiT=np.pi,transform=False,bar_angle=None):
-    #
-    # if transform=True, requires ParticleInstance.xbar to be defined
-    #
-    R = (ParticleInstance.xpos*ParticleInstance.xpos + ParticleInstance.ypos*ParticleInstance.ypos)**0.5
-    if transform==False:
-        particle_roi = np.where( (R > loR) & (R < hiR) & (abs(ParticleInstance.zpos) < zcut))[0]
-    #if transform==True:
-    #    # compute the bar lag
-    #    ParticleInstanceTransformed = trapping.BarTransform(ParticleInstance,bar_angle=bar_angle)
-    #    BL = ( (np.arctan2(ParticleInstanceTransformed.ypos,ParticleInstanceTransformed.xpos) + np.pi/2.) % np.pi) - np.pi/2.
-    #    # look for particles in the wedge relative to bar angle
-    #    particle_roi = np.where( (R > loR) & (R < hiR) & (abs(ParticleInstance.zpos) < zcut) & (BL > loT) & (BL < hiT))[0]
-    #
-    # fill a new array with particles that meet this criteria
-    #
-    holder = particle_holder()
-    holder.xpos = ParticleInstance.xpos[particle_roi]
-    holder.ypos = ParticleInstance.ypos[particle_roi]
-    holder.zpos = ParticleInstance.zpos[particle_roi]
-    holder.xvel = ParticleInstance.xvel[particle_roi]
-    holder.yvel = ParticleInstance.yvel[particle_roi]
-    holder.zvel = ParticleInstance.zvel[particle_roi]
-    holder.mass = ParticleInstance.mass[particle_roi]
-    holder.infile = ParticleInstance.infile
-    holder.comp = ParticleInstance.comp
-    holder.nbodies = ParticleInstance.nbodies
-    return holder
-
 
 def subdivide_particles_list(ParticleInstance,particle_roi):
-    #
-    # fill a new array with particles that meet this criteria
-    #
+    '''fill a new array with particles that meet this criteria
+    '''
     holder = particle_holder()
     holder.xpos = ParticleInstance.xpos[particle_roi]
     holder.ypos = ParticleInstance.ypos[particle_roi]
@@ -827,10 +303,10 @@ def subdivide_particles_list(ParticleInstance,particle_roi):
 
 
 
-#
-# can this get infile, etc?
-#
+
 def mix_particles(ParticleInstanceArray):
+    '''flatten arrays from multiprocessing into one ParticleInstance.
+    '''
     n_instances = len(ParticleInstanceArray)
     n_part = 0
     for i in range(0,n_instances):
@@ -864,119 +340,4 @@ def mix_particles(ParticleInstanceArray):
         first_part += n_instance_part
     return final_holder
 
-
-
-###############################################################################
-
-# manipulate file lists
-
-def get_n_snapshots(simulation_directory):
-    #
-    # find all snapshots
-    #
-    dirs = os.listdir( simulation_directory )
-    n_snapshots = 0
-    for file in dirs:
-        if file[0:4] == 'OUT.':
-            try:
-                if int(file[-5:]) > n_snapshots:
-                    n_snapshots = int(file[-5:])
-            except:
-                n_snapshots = n_snapshots
-    return n_snapshots
-
-
-
-
-
-
-def map_simulation_files(outfile,simulation_directory,simulation_name,verbose=1):
-    #
-    # simple definition to sort through a directory and make a list of all the dumps, guarding for bad files
-    #
-    if not os.path.isfile(outfile): # check to see if map already exists before making
-        #
-        f = open(outfile,'w')
-        #
-        n_snapshots = get_n_snapshots(simulation_directory)
-        current_time = -1.
-        for i in range(0,n_snapshots+1):
-            try:
-                PSPDump = Input(simulation_directory+'OUT.'+simulation_name+'.{0:05d}'.format(i))
-                t = PSPDump.time
-                del PSPDump
-
-            except:
-                print('Bad file: ',simulation_directory+'OUT.'+simulation_name+'.{0:05d}'.format(i))
-                t = current_time
-                
-            if t > current_time:
-                print(simulation_directory+'OUT.'+simulation_name+'.{0:05d}'.format(i),file=f)
-                current_time = t
-
-                if verbose > 0:
-                    try:
-                        print('Current time: {0:4.3f}'.format(current_time),end='\r', flush=True)
-                    except:
-                        print('Current time: {0:4.3f}'.format(current_time),end='\r')
-                        
-                
-        #
-        f.close()
-    #
-    else:
-        print('psp_io.map_simulation_files: file already exists.')
-
-
-
-'''
-# shrinking example: make a PSP file smaller than the original
-
-in_file = ""
-out_file = ""
-
-# get the positions ofr key markers
-O = psp_io.Input(in_file,comp='star')
-
-
-nbods_desired = 30000
-
-
-AA = open(in_file,"rb")
-data = AA.read(int(O.comp_pos_data[0] + int(nbods_desired*8*4)))
-
-BB = open(out_file,"wb")
-BB.write(data)
-
-
-# move to second component)
-AA.seek(O.comp_pos[1])
-data = AA.read(int((O.comp_pos_data[1]-O.comp_pos[1]) + nbods_desired*8*4))
-AA.close()
-
-
-BB.write(data)
-BB.close()
-
-
-
-# change the number of bodies
-
-# total
-AA = np.memmap(out_file, dtype=np.uint32, offset=8, shape=(1))
-AA[0] = int(2*nbods_desired)
-AA.flush()
-
-# halo
-AA = np.memmap(out_file, dtype=np.uint32, offset=int(O.comp_pos[0]+8), shape=(1))
-AA[0] = nbods_desired
-AA.flush()
-
-AA = np.memmap(out_file, dtype=np.uint32, offset=int(int(O.comp_pos_data[0] + int(nbods_desired*8*4))+8), shape=(1))
-AA[0] = nbods_desired
-AA.flush()
-
-
-'''
-        
 

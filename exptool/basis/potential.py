@@ -1217,7 +1217,7 @@ class EnergyKappa():
 #
 # this is EXCLUSIVELY temporary until a better format is decided on
 #
-def get_fields(simulation_directory,simulation_name,intime,eof_file,sph_file,model_file,bar_bonus='',nhalo=1000000,transform=False):
+def get_fields(simulation_directory,simulation_name,intime,eof_file,sph_file,model_file,bar_bonus='',nhalo=1000000,transform=False,bar_file=''):
     '''
     input
     -----------------------------------
@@ -1241,15 +1241,13 @@ def get_fields(simulation_directory,simulation_name,intime,eof_file,sph_file,mod
     BarInstance = pattern.BarDetermine()
 
     if transform:
-        if bar_bonus == '':
-            BarInstance.read_bar(simulation_directory+simulation_name+'_barpos.dat')
-        else:
-            BarInstance.read_bar(simulation_directory+simulation_name+'_'+bar_bonus+'_barpos.dat')
+        BarInstance.read_bar(bar_file)
             
-    # reset the derivative
+    	# reset the derivative
         BarInstance.frequency_and_derivative(spline_derivative=2)
     
-        PSPDump = psp_io.Input(infile,validate=True)
+        PSPDump = psp_io.Input(infile,legacy=False)
+	#validate=True)
     
         patt = pattern.find_barpattern(PSPDump.time,BarInstance,smth_order=None)
     
