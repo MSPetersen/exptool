@@ -2,7 +2,11 @@
 
 #https://docs.python.org/2/distutils/setupscript.html
 
-from setuptools import setup
+try:
+	from setuptools import setup
+except:
+	from distutils.core import setup
+
 from distutils.core import Extension
 import sys
 import sysconfig
