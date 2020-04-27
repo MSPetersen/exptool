@@ -156,7 +156,7 @@ ZVEL = np.concatenate(zvel)
 MASS = np.concatenate(mass) 
 #TIMES = np.concatenate(times)
 
-print 'It took %3.2f seconds to build the particle list.' % (time.time()-t1)
+#print 'It took %3.2f seconds to build the particle list.' % (time.time()-t1)
 
 
 
@@ -187,7 +187,7 @@ def compute_fourier(XPOS,YPOS,MASS,RBINS,mmax):
     bval = np.zeros([mmax,len(rbins)])
     for indx,r in enumerate(rbins):
         yes = np.where( r_dig == indx)[0]
-        print len(yes)
+        #print len(yes)
         aval[0,indx] = np.sum(MASS[yes])
         for m in range(1,mmax):
             aval[m,indx] = np.sum(MASS[yes] * np.cos(float(m)*np.arctan2(YPOS[yes],XPOS[yes])))

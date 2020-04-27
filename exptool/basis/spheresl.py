@@ -60,6 +60,10 @@ import multiprocessing
 import itertools
 from multiprocessing import Pool, freeze_support
 
+try:
+    from itertools import izip as zip
+except ImportError: # will be 3.x series
+    pass
 
 ###############################################################################
 '''
@@ -412,7 +416,7 @@ def multi_compute_coefficients(holding,nprocs,sph_file,mod_file,verbose=1,no_odd
         a_coeffs = pool.map(compute_coefficients_solitary_star, zip(a_args, itertools.repeat(second_arg),itertools.repeat(third_arg),\
                                                                            fourth_arg,itertools.repeat(fifth_arg)))
     except:
-        a_coeffs = pool.map(compute_coefficients_solitary_star, itertools.izip(a_args, itertools.repeat(second_arg),itertools.repeat(third_arg),\
+        a_coeffs = pool.map(compute_coefficients_solitary_star, zip(a_args, itertools.repeat(second_arg),itertools.repeat(third_arg),\
                                                                            fourth_arg,itertools.repeat(fifth_arg)))
                                                                            
                                                                            

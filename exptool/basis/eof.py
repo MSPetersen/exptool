@@ -81,6 +81,12 @@ import matplotlib.cm as cm
 from collections import OrderedDict
 import matplotlib as mpl
 
+# add a compatibility for python3
+try:
+    from itertools import izip as zip
+except ImportError: # will be 3.x series
+    pass
+
 
 # exptool definitions
 from exptool.utils import utils
@@ -1263,7 +1269,7 @@ def multi_accumulate(holding,nprocs,potC,potS,mmax,norder,XMIN,dX,YMIN,dY,numx,n
     seventeenth_arg = VAR
     
     
-    a_coeffs = pool.map(accumulate_star, itertools.izip(a_args, itertools.repeat(second_arg),itertools.repeat(third_arg),\
+    a_coeffs = pool.map(accumulate_star, zip(a_args, itertools.repeat(second_arg),itertools.repeat(third_arg),\
                                                                 itertools.repeat(fourth_arg),itertools.repeat(fifth_arg),itertools.repeat(sixth_arg),\
                                                                 itertools.repeat(seventh_arg),itertools.repeat(eighth_arg),itertools.repeat(ninth_arg),\
                                                                 itertools.repeat(tenth_arg),itertools.repeat(eleventh_arg),itertools.repeat(twelvth_arg),\
@@ -1352,7 +1358,7 @@ def multi_accumulated_eval(holding,nprocs,a_cos,a_sin,potC,rforceC, zforceC,potS
     twentythird_arg[0] = verbose
     twentyfourth_arg = density
     a_vals = pool.map(accumulated_eval_particles_star,\
-                         itertools.izip(a_args, itertools.repeat(second_arg),itertools.repeat(third_arg),\
+                         zip(a_args, itertools.repeat(second_arg),itertools.repeat(third_arg),\
                          itertools.repeat(fourth_arg),itertools.repeat(fifth_arg),itertools.repeat(sixth_arg),\
                          itertools.repeat(seventh_arg),itertools.repeat(eighth_arg),itertools.repeat(ninth_arg),\
                          itertools.repeat(tenth_arg),itertools.repeat(eleventh_arg),itertools.repeat(twelvth_arg),\
