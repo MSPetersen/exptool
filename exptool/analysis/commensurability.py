@@ -1,22 +1,27 @@
-'''
-  ______   ______   .___  ___. .___  ___.  _______ .__   __.      _______. __    __  .______          ___      .______    __   __       __  .___________.____    ____ 
- /      | /  __  \  |   \/   | |   \/   | |   ____||  \ |  |     /       ||  |  |  | |   _  \        /   \     |   _  \  |  | |  |     |  | |           |\   \  /   / 
-|  ,----'|  |  |  | |  \  /  | |  \  /  | |  |__   |   \|  |    |   (----`|  |  |  | |  |_)  |      /  ^  \    |  |_)  | |  | |  |     |  | `---|  |----` \   \/   /  
-|  |     |  |  |  | |  |\/|  | |  |\/|  | |   __|  |  . `  |     \   \    |  |  |  | |      /      /  /_\  \   |   _  <  |  | |  |     |  |     |  |       \_    _/   
-|  `----.|  `--'  | |  |  |  | |  |  |  | |  |____ |  |\   | .----)   |   |  `--'  | |  |\  \----./  _____  \  |  |_)  | |  | |  `----.|  |     |  |         |  |     
- \______| \______/  |__|  |__| |__|  |__| |_______||__| \__| |_______/     \______/  | _| `._____/__/     \__\ |______/  |__| |_______||__|     |__|         |__|     
+"""
+
 commensurability.py: part of exptool
       tools to handle various commensurability finding items
 
 
+Aval = calculate_area(Orbit,ratio=5.)
+print(Aval)
 
 
- '''
+
+"""
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 # standard imports
 import numpy as np
-from matplotlib import _cntr as cntr
+
+#
+# not relevant here, but removed in matplotlib 2.2, use skimage.measure.find_contour instead
+#
+#from matplotlib import _cntr as cntr
+
+
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
@@ -29,6 +34,10 @@ from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import filters
 import scipy.ndimage.filters
 
+from scipy.spatial import Delaunay
+# https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.spatial.Delaunay.html
+
+
 # need a check here to see if this will actually import and a clause if not
 
 try:
@@ -36,6 +45,73 @@ try:
     able_to_skel = True
 except:
     able_to_skel = False
+
+
+
+
+
+
+def calculate_area(Orbit,ratio=10.,usex='TX',usey='TY'):
+    """calculate the area of an orbit using volume tesselation
+
+    inputs
+    --------------------
+    Orbit : dictionary of orbit quantities
+    ratio : (float, default=10.) ratio of minimum side length to maximum to not count toward the area total
+    usex  : (string, default='TX') key in dictionary for x coordinate
+    usey  : (string, default='TY') key in dictionary for y coordinate
+
+    returns
+    -------------------
+    the area value, normalized by the maximum circle area
+
+
+
+    todo
+    ------------------
+    1. turn into 3d
+    
+    """
+    points = np.array([[Orbit[usex][x],Orbit[usey][x]] for  x in range(0,len(Orbit[usex]))])
+
+    # do the triangulation
+    tri = Delaunay(points)
+
+
+    A = np.zeros(tri.simplices.shape[0])
+    legs = np.zeros([tri.simplices.shape[0],3])
+
+
+
+    for t in range(0,tri.simplices.shape[0]):
+        
+        xvals = tri.simplices[t]
+        x1 = Orbit[usex][xvals[0]]
+        x2 = Orbit[usex][xvals[1]]
+        x3 = Orbit[usex][xvals[2]]
+        y1 = Orbit[usey][xvals[0]]
+        y2 = Orbit[usey][xvals[1]]
+        y3 = Orbit[usey][xvals[2]]
+
+        A[t] = 0.5*((x2-x1)*(y3-y1) - (x3-x1)*(y2-y1))
+    
+        tmplegs = np.array([np.sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2)),\
+                       np.sqrt((x1-x3)*(x1-x3) + (y1-y3)*(y1-y3)),\
+                       np.sqrt((x2-x3)*(x2-x3) + (y2-y3)*(y2-y3))])
+    
+        legs[t] = tmplegs[tmplegs.argsort()]
+
+    med = np.median(legs[:,0])
+    include = legs[:,1]/med
+    
+    # this has the normalization in it now
+    return np.sum(A[include < ratio])/(np.pi*np.nanmax(Orbit['X'])*np.nanmax(Orbit['X']))
+    
+    
+
+
+
+
 
 
 
@@ -200,7 +276,8 @@ def map_skeleton(Rarr,Varr,Aarr,\
         
     
     return ridge_trace
-    
+
+
     
 def print_skeleton(infile,pskel,Rarr,Varr):
 
@@ -220,16 +297,16 @@ def print_skeleton(infile,pskel,Rarr,Varr):
 
 def make_fishbone(infile):
     E = np.genfromtxt(infile) 
-
+    #
     rads = np.unique(E[:,0])
     vels = np.unique(E[:,1])
-
+    #
     Rarr,Varr = np.meshgrid(rads,vels)  
     Rarr = Rarr.T; Varr = Varr.T
     Aarr = E[:,2].reshape(rads.size,vels.size)
-    
+    #
     dd = Aarr.T/(np.pi*Rarr.T*Rarr.T)
-
+    #
     return Rarr.T,Varr.T,dd
 
 
@@ -307,6 +384,7 @@ def construct_live_fishbones(infile,percentile=25.,particle_limit=0,rads = np.li
                 LF['perc'][rindx,vindx] = arr_aa[quartile]
 
     return LF
+
 
 
 
